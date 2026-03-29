@@ -31,4 +31,4 @@ jobs:
 
     - name: Push Docker Image
       run: |
-        docker push daniuy/docker-graphql:1.0.2 .
+        docker push daniuy/docker-graphql:1.0.2
