@@ -1,73 +1,224 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="200" alt="Nest Logo" /></a>
-</p>
+Este archivo Dockerfile sirve para preparar una aplicación de Node.js en varias etapas. La idea es separar la instalación de dependencias, la compilación y la versión final que realmente se ejecutará.
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+Al hacerlo de esta manera, la imagen final contiene solamente lo necesario para funcionar y evita incluir archivos o dependencias que solo se utilizaron durante el desarrollo.
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://coveralls.io/github/nestjs/nest?branch=master" target="_blank"><img src="https://coveralls.io/repos/github/nestjs/nest/badge.svg?branch=master#9" alt="Coverage" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+## 1. Instalación de dependencias de desarrollo
 
-## Description
-
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
-
-## Installation
-
-```bash
-$ npm install
+```dockerfile
+FROM node:19-alpine3.15 as dev-deps
+WORKDIR /app
+COPY package.json package.json
+RUN yarn install --frozen-lockfile
 ```
 
-## Running the app
+Primero se crea una etapa llamada `dev-deps`.
 
-```bash
-# development
-$ npm run start
-
-# watch mode
-$ npm run start:dev
-
-# production mode
-$ npm run start:prod
+```dockerfile
+FROM node:19-alpine3.15 as dev-deps
 ```
 
-## Test
+Aquí se indica que se utilizará Node.js 19 sobre Alpine Linux.
 
-```bash
-# unit tests
-$ npm run test
+Alpine es una distribución de Linux pequeña, por lo que suele utilizarse para crear imágenes de Docker más ligeras.
 
-# e2e tests
-$ npm run test:e2e
+El nombre `dev-deps` nos permite utilizar después los archivos generados en esta etapa.
 
-# test coverage
-$ npm run test:cov
+```dockerfile
+WORKDIR /app
 ```
 
-## Support
+Establece `/app` como la carpeta principal de trabajo dentro del contenedor.
 
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
+A partir de este momento, los siguientes comandos se ejecutarán dentro de esa carpeta.
 
-## Stay in touch
+```dockerfile
+COPY package.json package.json
+RUN yarn install --frozen-lockfile
+```
 
-- Author - [Kamil Myśliwiec](https://kamilmysliwiec.com)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
+Primero se copia el archivo `package.json`, que contiene las dependencias del proyecto.
 
-## License
+Después, Yarn instala todas las dependencias necesarias para desarrollar y compilar la aplicación.
 
-Nest is [MIT licensed](LICENSE).
+La opción `--frozen-lockfile` hace que Yarn respete exactamente las versiones definidas en el archivo de bloqueo del proyecto, evitando que se instalen versiones diferentes accidentalmente.
+
+## 2. Compilación de la aplicación
+
+```dockerfile
+FROM node:19-alpine3.15 as builder
+WORKDIR /app
+COPY --from=dev-deps /app/node_modules ./node_modules
+COPY . .
+RUN yarn build
+```
+
+La segunda etapa se llama `builder` y se encarga de compilar la aplicación.
+
+```dockerfile
+COPY --from=dev-deps /app/node_modules ./node_modules
+```
+
+En lugar de volver a instalar todas las dependencias, se copian desde la etapa anterior.
+
+Después:
+
+```dockerfile
+COPY . .
+```
+
+Se copia el código completo del proyecto dentro del contenedor.
+
+Finalmente:
+
+```dockerfile
+RUN yarn build
+```
+
+Se ejecuta el proceso de compilación de la aplicación.
+
+Normalmente este comando genera una carpeta como:
+
+```text
+dist/
+```
+
+Esa carpeta contiene el código preparado para ejecutarse en producción.
+
+También existe esta línea:
+
+```dockerfile
+# RUN yarn test
+```
+
+Como empieza con `#`, está comentada y Docker no la ejecuta.
+
+Si se quitara el comentario, los tests del proyecto se ejecutarían antes de compilar la aplicación.
+
+## 3. Dependencias de producción
+
+```dockerfile
+FROM node:19-alpine3.15 as prod-deps
+WORKDIR /app
+COPY package.json package.json
+RUN yarn install --prod --frozen-lockfile
+```
+
+Esta etapa se llama `prod-deps`.
+
+Su objetivo es instalar solamente las dependencias necesarias para ejecutar la aplicación en producción.
+
+La diferencia importante está aquí:
+
+```dockerfile
+yarn install --prod
+```
+
+La opción `--prod` evita instalar dependencias utilizadas únicamente durante el desarrollo.
+
+Por ejemplo, herramientas de testing, compilación o desarrollo pueden ser necesarias para construir la aplicación, pero no para ejecutarla.
+
+Esto ayuda a reducir el tamaño de la imagen final.
+
+## 4. Imagen final de producción
+
+```dockerfile
+FROM node:19-alpine3.15 as prod
+EXPOSE 3000
+WORKDIR /app
+ENV APP_VERSION=${APP_VERSION}
+COPY --from=prod-deps /app/node_modules ./node_modules
+COPY --from=builder /app/dist ./dist
+
+CMD [ "node","dist/main.js"]
+```
+
+Esta es la etapa final y es la imagen que realmente se utilizará cuando se ejecute el contenedor.
+
+```dockerfile
+EXPOSE 3000
+```
+
+Indica que la aplicación utiliza el puerto `3000`.
+
+Esto funciona principalmente como documentación dentro de la imagen. Para poder acceder realmente al puerto desde fuera del contenedor todavía es necesario publicarlo al ejecutar Docker.
+
+Por ejemplo:
+
+```bash
+docker run -p 3000:3000 nombre-imagen
+```
+
+Después se vuelve a establecer `/app` como carpeta de trabajo.
+
+```dockerfile
+ENV APP_VERSION=${APP_VERSION}
+```
+
+Esta línea define una variable de entorno llamada `APP_VERSION`.
+
+Puede utilizarse para guardar o consultar la versión de la aplicación desde dentro del contenedor.
+
+Después se copian solamente los archivos que realmente necesita la aplicación:
+
+```dockerfile
+COPY --from=prod-deps /app/node_modules ./node_modules
+```
+
+Copia las dependencias necesarias para producción.
+
+```dockerfile
+COPY --from=builder /app/dist ./dist
+```
+
+Copia la aplicación ya compilada desde la etapa `builder`.
+
+Finalmente:
+
+```dockerfile
+CMD [ "node","dist/main.js"]
+```
+
+Este es el comando que se ejecuta cuando inicia el contenedor.
+
+Es equivalente a ejecutar:
+
+```bash
+node dist/main.js
+```
+
+Por lo tanto, Node.js inicia el archivo principal de la aplicación que se encuentra dentro de la carpeta `dist`.
+
+## Flujo completo
+
+Puedes imaginar todo el Dockerfile de esta manera:
+
+```text
+Código del proyecto
+        |
+        v
+Instalar dependencias de desarrollo
+        |
+        v
+Compilar la aplicación
+        |
+        v
+Instalar únicamente dependencias de producción
+        |
+        v
+Crear una imagen final
+        |
+        v
+Ejecutar dist/main.js
+```
+
+La principal ventaja de hacerlo en varias etapas es que la imagen final no necesita guardar todas las herramientas utilizadas durante la compilación.
+
+Solo termina incluyendo:
+
+```text
+Node.js
+Dependencias de producción
+Aplicación compilada
+```
+
+Esto permite tener una imagen más pequeña, más limpia y preparada específicamente para ejecutar la aplicación.
